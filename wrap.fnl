@@ -84,7 +84,8 @@
      :tile (love.graphics.newQuad 16 0 16 16 image)
      :open-tiles (fcollect [i 0 9]
                    (love.graphics.newQuad (+ 80 (* i 16)) 0 16 16 image))
-     :bomb-tile (love.graphics.newQuad 80 16 16 16 image)}))
+     :bomb-tile (love.graphics.newQuad 80 16 16 16 image)
+     :flag-tile (love.graphics.newQuad 16 48 16 16 image)}))
 
 (local spritesheet (load-spritesheet))
 
@@ -106,14 +107,22 @@
 (love.load)
 
 (fn love.mousereleased [x y button _istouch _presses]
-  (when (= button 1)
-    (let [(gx gy) (scale-transform:inverseTransformPoint x y)
-          col (inc (math.floor (/ gx 16)))
-          row (inc (math.floor (/ gy 16)))]
-      (when (valid-pos? game.mode col row)
-        (reveal-cell game (pos->cell game.mode game.cells col row))
-        (case (pos->cell game.mode game.cells col row)
-          {:bomb? true} (print "Bomb!"))))))
+  (if (= button 1)
+      (let [(gx gy) (scale-transform:inverseTransformPoint x y)
+            col (inc (math.floor (/ gx 16)))
+            row (inc (math.floor (/ gy 16)))]
+        (when (and (valid-pos? game.mode col row)
+                   (not (. (pos->cell game.mode game.cells col row) :flagged?)))
+          (reveal-cell game (pos->cell game.mode game.cells col row))
+          (case (pos->cell game.mode game.cells col row)
+            {:bomb? true} (print "Bomb!"))))
+      (= button 2)
+      (let [(gx gy) (scale-transform:inverseTransformPoint x y)
+            col (inc (math.floor (/ gx 16)))
+            row (inc (math.floor (/ gy 16)))]
+        (when (valid-pos? game.mode col row)
+          (let [cell (pos->cell game.mode game.cells col row)]
+            (set cell.flagged? (not cell.flagged?)))))))
 
 (comment (let [my-cell {:bomb? false
                         :flagged? false
@@ -129,7 +138,9 @@
       (if cell.bomb?
           spritesheet.bomb-tile
           (. spritesheet :open-tiles (inc cell.adjacent-bombs)))
-      spritesheet.tile))
+      (if cell.flagged?
+          spritesheet.flag-tile
+          spritesheet.tile)))
 
 (fn love.draw []
   (love.graphics.setCanvas canvas)

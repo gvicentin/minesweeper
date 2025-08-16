@@ -61,7 +61,7 @@
   (let [mode (. game-modes mode-type)
         cells (generate-cells mode)]
     (setup-adjacency mode cells)
-    {:mode mode :cells cells}))
+    {:mode mode :cells cells :current-state :playing}))
 
 (comment (new-game :easy))
 
@@ -75,6 +75,11 @@
         (when (not neighbor.revealed?)
           (reveal-cell game neighbor))))))
 
+(fn game-cleared? [cells]
+  (= 0 (length (icollect [_ cell (ipairs cells)]
+                 (when (and (not cell.bomb?) (not cell.revealed?))
+                   cell)))))
+
 ;; sprite stuff
 
 (fn load-spritesheet []
@@ -85,7 +90,9 @@
      :open-tiles (fcollect [i 0 9]
                    (love.graphics.newQuad (+ 80 (* i 16)) 0 16 16 image))
      :bomb-tile (love.graphics.newQuad 80 16 16 16 image)
-     :flag-tile (love.graphics.newQuad 16 48 16 16 image)}))
+     :hit-bomb-tile (love.graphics.newQuad 96 16 16 16 image)
+     :cross-flag-tile (love.graphics.newQuad 16 48 16 16 image)
+     :flag-tile (love.graphics.newQuad 32 48 16 16 image)}))
 
 (local spritesheet (load-spritesheet))
 
@@ -96,7 +103,7 @@
 
 (fn love.load []
   (print "Loading game...")
-  (set game (new-game :hard))
+  (set game (new-game :medium))
   (set scale-transform (-> (love.math.newTransform)
                            (: :scale 3 3)
                            (: :translate 32 32)))
@@ -115,7 +122,9 @@
                    (not (. (pos->cell game.mode game.cells col row) :flagged?)))
           (reveal-cell game (pos->cell game.mode game.cells col row))
           (case (pos->cell game.mode game.cells col row)
-            {:bomb? true} (print "Bomb!"))))
+            {:bomb? true} (set game.current-state :game-over))
+          (when (game-cleared? game.cells)
+            (set game.current-state :game-cleared))))
       (= button 2)
       (let [(gx gy) (scale-transform:inverseTransformPoint x y)
             col (inc (math.floor (/ gx 16)))
@@ -133,6 +142,7 @@
              {:adjacent-bombs 0} (print "Empty!")
              (where {:adjacent-bombs n} (= n 3)) (print "Number:" n))))
 
+;; TODO: remove this fn
 (fn cell-tile [cell]
   (if cell.revealed?
       (if cell.bomb?
@@ -142,13 +152,38 @@
           spritesheet.flag-tile
           spritesheet.tile)))
 
+(fn draw-game-over [cells]
+  (each [_ cell (ipairs cells)]
+    (let [tile (case cell
+                 {:flagged? true :bomb? true} spritesheet.flag-tile
+                 {:flagged? true :bomb? false} spritesheet.cross-flag-tile
+                 {:bomb? true :revealed? true} spritesheet.hit-bomb-tile
+                 {:bomb? true :revealed? false} spritesheet.bomb-tile
+                 {:revealed? true} (. spritesheet :open-tiles
+                                      (inc cell.adjacent-bombs))
+                 _ spritesheet.tile)]
+      (love.graphics.draw spritesheet.image tile (* 16 (dec cell.col))
+                          (* 16 (dec cell.row))))))
+
+(fn draw-game-cleared [cells]
+  (each [_ cell (ipairs cells)]
+    (let [tile (case cell
+                 {:bomb? true} spritesheet.flag-tile
+                 _ (. spritesheet :open-tiles (inc cell.adjacent-bombs)))]
+      (love.graphics.draw spritesheet.image tile (* 16 (dec cell.col))
+                          (* 16 (dec cell.row))))))
+
 (fn love.draw []
   (love.graphics.setCanvas canvas)
   (love.graphics.clear 1 1 1 1)
-  (each [_ cell (ipairs game.cells)]
-    (let [tile (cell-tile cell)]
-      (love.graphics.draw spritesheet.image tile (* 16 (dec cell.col))
-                          (* 16 (dec cell.row)))))
+  (if (= :game-over game.current-state)
+      (draw-game-over game.cells)
+      (= :game-cleared game.current-state)
+      (draw-game-cleared game.cells)
+      (each [_ cell (ipairs game.cells)]
+        (let [tile (cell-tile cell)]
+          (love.graphics.draw spritesheet.image tile (* 16 (dec cell.col))
+                              (* 16 (dec cell.row))))))
   (love.graphics.setCanvas)
   (love.graphics.setColor 1 1 1 1)
   (love.graphics.applyTransform scale-transform)
